@@ -87,7 +87,6 @@
         # Development tools
         devTools = with pkgs; [
           git
-          uv
           direnv
           nix-direnv
           

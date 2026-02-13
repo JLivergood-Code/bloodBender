@@ -2,7 +2,7 @@
   description = "bloodBender - Advanced Tandem Insulin Pump Data Processing & ML Prediction System";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-23.11";
     flake-utils.url = "github:numtide/flake-utils";
   };
 
@@ -49,9 +49,6 @@
           
           # Logging and formatting
           colorama
-          
-          # File handling
-          pathlib
           
           # Development tools
           pytest
@@ -192,9 +189,6 @@
           cpp = cppOnlyShell;
         };
 
-        # Legacy attribute for older Nix versions
-        devShell = devShells.default;
-
         # Packages
         packages = {
           # bloodBath Python package
@@ -243,9 +237,6 @@
             };
           };
         };
-
-        # Legacy default package for older Nix versions
-        defaultPackage = packages.bloodBath;
 
         # Apps (runnable commands)
         apps = {

@@ -38,9 +38,13 @@
           # Lightning and ML tools
           pytorch-lightning
           torchmetrics
+          tensorboard
           
           # ONNX
           onnx
+          
+          # Machine Learning
+          scikit-learn
           
           # Utilities
           certifi
@@ -49,9 +53,11 @@
           
           # Logging and formatting
           colorama
+          coloredlogs
           
           # Development tools
           pytest
+          pytest-cov
           black
           flake8
           mypy
@@ -241,20 +247,26 @@
         apps = {
           bloodBath = {
             type = "app";
-            program = "${pythonEnv}/bin/python";
-            args = [ "-m" "bloodBath" ];
+            program = toString (pkgs.writeShellScript "bloodBath" ''
+              cd ${toString ./.}
+              ${pythonEnv}/bin/python -m bloodBath "$@"
+            '');
           };
 
           productionSync = {
             type = "app";
-            program = "${pythonEnv}/bin/python";
-            args = [ "-m" "bloodBath.cli.main" "production-sync" ];
+            program = toString (pkgs.writeShellScript "production-sync" ''
+              cd ${toString ./.}
+              ${pythonEnv}/bin/python -m bloodBath.cli.main production-sync "$@"
+            '');
           };
           
           trainLSTM = {
             type = "app";
-            program = "${pythonEnv}/bin/python";
-            args = [ "bloodTwin/pipelines/train_lstm.py" ];
+            program = toString (pkgs.writeShellScript "train-lstm" ''
+              cd ${toString ./.}
+              ${pythonEnv}/bin/python bloodTwin/pipelines/train_lstm.py "$@"
+            '');
           };
         };
 

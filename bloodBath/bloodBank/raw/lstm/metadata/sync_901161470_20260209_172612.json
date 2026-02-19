@@ -1,0 +1,10 @@
+{
+  "pump_serial": "901161470",
+  "start_date": "2025-11-11",
+  "end_date": "2026-02-09",
+  "records_count": 7983,
+  "sync_timestamp": "2026-02-09T17:26:12.060461",
+  "update_mode": false,
+  "force_full": false,
+  "output_file": "/home/bolt/projects/bb/bloodBender/bloodBath/bloodBank/raw/lstm/lstm_pump_data/SYNTHETIC_TEMPLATE_pump_901161470_20260209_172610.csv"
+}

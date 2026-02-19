@@ -4,7 +4,7 @@ Environment variable utilities for bloodBath
 
 import os
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Tuple
 from dotenv import load_dotenv
 import logging
 
@@ -51,7 +51,7 @@ def load_env_file(env_file: Optional[Path] = None) -> bool:
     return False
 
 
-def get_credentials() -> tuple[Optional[str], Optional[str]]:
+def get_credentials() -> Tuple[Optional[str], Optional[str]]:
     """
     Get email and password from environment variables
     
@@ -225,12 +225,12 @@ BLOODBATH_LOG_LEVEL=INFO
     return output_path
 
 
-def get_env_file_locations() -> list[Path]:
+def get_env_file_locations():
     """
     Get list of locations where .env files are searched
     
     Returns:
-        list[Path]: List of search paths
+        List[Path]: List of search paths
     """
     current_dir = Path.cwd()
     project_root = Path(__file__).parent.parent.parent

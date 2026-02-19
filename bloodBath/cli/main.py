@@ -863,7 +863,7 @@ def cmd_production_sync(args):
     setup_cli_logging(args.verbose)
     
     try:
-        from ..sync.simple_sync import SimpleSyncEngine as SyncEngine
+        from ..sync.sync_engine import SyncEngine
     except ImportError:
         print("❌ Production sync module not available")
         print("💡 The production sync functionality has been integrated into bloodBath")
@@ -883,7 +883,7 @@ def cmd_production_sync(args):
     print(f"Validation: {'Disabled' if args.disable_validation else 'Enabled'}")
     
     # Initialize sync engine
-    sync_engine = SyncEngine(output_dir=args.output_dir)
+    sync_engine = SyncEngine(output_dir=args.output_dir, chunk_days=args.chunk_days)
     
     try:
         # Perform sync operation

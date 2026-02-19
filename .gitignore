@@ -72,6 +72,7 @@ venv/
 **/Thumbs.db
 
 # Large data files that shouldn't be in git
+**/bloodBank/**/*.csv
 **/bloodBank/raw/**/*.csv
 **/bloodBank/archives/**/*.csv
 **/bloodBank/lstm_pump_data/**/*.csv
@@ -81,6 +82,11 @@ venv/
 !**/bloodBank/**/*.json
 !**/bloodBank/**/*.md
 !**/bloodBank/**/*.txt
+
+# Exclude raw sync metadata files
+**/bloodBank/raw/metadata/sync_*.json
+**/bloodBank/raw/sync_metadata.json
+**/bloodBath/bloodBank/merged/train/analytics/*.json
 
 # Testing and temporary files
 **/test_output/

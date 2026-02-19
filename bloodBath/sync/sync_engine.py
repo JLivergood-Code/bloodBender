@@ -16,7 +16,7 @@ class SyncEngine:
     Simplified synchronization interface for bloodBath
     """
     
-    def __init__(self, output_dir: str = "/home/bolt/projects/bb/training_data"):
+    def __init__(self, output_dir: str = "/home/bolt/projects/bb/training_data", chunk_days: int = 15):
         """
         Initialize sync engine
         
@@ -24,7 +24,7 @@ class SyncEngine:
             output_dir: Directory for training data output
         """
         self.output_dir = Path(output_dir)
-        self.harvest_manager = HarvestManager(str(output_dir))
+        self.harvest_manager = HarvestManager(str(output_dir), chunk_days=chunk_days)
     
     def sync(self, 
              pump_serial: Optional[str] = None,

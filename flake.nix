@@ -68,6 +68,19 @@
             '';
           };
 
+          normal-full-sync = pkgs.writeShellApplication {
+            name = "normal-full-sync";
+            runtimeInputs = [ pythonSyncEnv ];
+            text = ''
+              if [[ ! -d "$PWD/bloodBath" ]]; then
+                echo "ERR: Run from the bloodBender repository root (missing ./bloodBath)." >&2
+                exit 1
+              fi
+              export PYTHONPATH="$PWD''${PYTHONPATH:+:$PYTHONPATH}"
+              exec python -m bloodBath.cli.main production-sync --chunk-days "''${SYNC_CHUNK_DAYS:-15}" "$@"
+            '';
+          };
+
           run-inference = pkgs.writeShellApplication {
             name = "run-inference";
             runtimeInputs = [ pythonInferenceEnv pkgs.bash pkgs.coreutils pkgs.findutils pkgs.gnugrep pkgs.gnused ];
@@ -89,6 +102,11 @@
           sync-data = {
             type = "app";
             program = "${self.packages.${pkgs.system}.sync-data}/bin/sync-data";
+          };
+
+          normal-full-sync = {
+            type = "app";
+            program = "${self.packages.${pkgs.system}.normal-full-sync}/bin/normal-full-sync";
           };
 
           run-inference = {

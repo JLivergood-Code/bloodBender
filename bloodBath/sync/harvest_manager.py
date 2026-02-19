@@ -279,6 +279,43 @@ class HarvestManager:
         self.logger.info(f"   📊 Summary: {valid_count} valid, {invalid_count} invalid files")
         
         return existing_files
+
+    def _discover_account_pumps(self) -> List[str]:
+        """Discover all pump serials connected to the account."""
+        try:
+            api = self.client.connector.get_api()
+            pump_metadata = api.tandemsource.pump_event_metadata()
+            serials = []
+            for pump in pump_metadata or []:
+                serial = pump.get('serialNumber')
+                if serial:
+                    serials.append(str(serial))
+            return serials
+        except Exception as e:
+            self.logger.warning(f"Could not auto-discover pumps from account: {e}")
+            return []
+
+    def _get_oldest_stored_month_start(self, pump_serial: str) -> Optional[datetime]:
+        """Return oldest month start found in stored monthly files for a pump."""
+        monthly_dir = self.output_dir / "monthly_lstm" / f"pump_{pump_serial}"
+        if not monthly_dir.exists():
+            return None
+
+        oldest = None
+        for csv_file in monthly_dir.glob(f"pump_{pump_serial}_*.csv"):
+            parts = csv_file.stem.split('_')
+            if len(parts) < 4:
+                continue
+            try:
+                year = int(parts[2])
+                month = int(parts[3])
+                dt = datetime(year, month, 1)
+                if oldest is None or dt < oldest:
+                    oldest = dt
+            except Exception:
+                continue
+
+        return oldest
     
     def _validate_existing_file(self, file_path: Path) -> bool:
         """
@@ -558,8 +595,18 @@ class HarvestManager:
                 if detected_start is None or detected_end is None:
                     self.logger.error(f"Could not detect data range for pump {pump_serial}")
                     return {'success': False, 'error': 'Data range detection failed'}
-                
-                start_date = start_date or detected_start
+
+                oldest_stored = self._get_oldest_stored_month_start(pump_serial)
+                if start_date is None:
+                    start_date = oldest_stored or detected_start
+                    if oldest_stored:
+                        self.logger.info(
+                            f"📚 Using oldest stored month for pump {pump_serial}: {oldest_stored.date()}"
+                        )
+                    else:
+                        self.logger.info(
+                            f"🌐 No stored files for pump {pump_serial}; using server earliest: {detected_start.date()}"
+                        )
                 end_date = end_date or detected_end
             
             self.logger.info(f"📅 Sync range: {start_date.date()} to {end_date.date()}")
@@ -830,7 +877,9 @@ class HarvestManager:
             Comprehensive sync results for all pumps
         """
         if pump_serials is None:
-            pump_serials = ["881235", "901161470"]  # Default pumps
+            pump_serials = self._discover_account_pumps()
+            if not pump_serials:
+                pump_serials = ["881235", "901161470"]  # fallback
         
         self.logger.info(f"\n🚀 STARTING MULTI-PUMP SYNC")
         self.logger.info(f"Pumps: {pump_serials}")

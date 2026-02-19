@@ -23,31 +23,41 @@
     {
       packages = forAllSystems ({ pkgs }:
         let
-          python = pkgs.python310;
-          pythonEnv = python.withPackages (ps: with ps; [
+          python = pkgs.python311.override {
+            packageOverrides = self: super: {
+              fsspec = super.fsspec.overridePythonAttrs (_: {
+                doCheck = false;
+              });
+            };
+          };
+          pythonSyncEnv = python.withPackages (ps: with ps; [
             arrow
             cryptography
             numpy
             pandas
-            pyarrow
             pyjwt
             python-dotenv
             pyyaml
-            pytorch-lightning
             requests
             scikit-learn
             scipy
+          ]);
+          pythonInferenceEnv = python.withPackages (ps: with ps; [
+            numpy
+            pandas
+            scikit-learn
+            scipy
             torch
-            torchmetrics
           ]);
         in
         {
-          default = pythonEnv;
-          bloodbender-env = pythonEnv;
+          default = pythonSyncEnv;
+          bloodbender-env = pythonSyncEnv;
+          bloodbender-inference-env = pythonInferenceEnv;
 
           sync-data = pkgs.writeShellApplication {
             name = "sync-data";
-            runtimeInputs = [ pythonEnv ];
+            runtimeInputs = [ pythonSyncEnv ];
             text = ''
               if [[ ! -d "$PWD/bloodBath" ]]; then
                 echo "ERR: Run from the bloodBender repository root (missing ./bloodBath)." >&2
@@ -60,7 +70,7 @@
 
           run-inference = pkgs.writeShellApplication {
             name = "run-inference";
-            runtimeInputs = [ pythonEnv pkgs.bash pkgs.coreutils pkgs.findutils pkgs.gnugrep pkgs.gnused ];
+            runtimeInputs = [ pythonInferenceEnv pkgs.bash pkgs.coreutils pkgs.findutils pkgs.gnugrep pkgs.gnused ];
             text = ''
               if [[ ! -f "$PWD/run_lstm_inference.sh" ]]; then
                 echo "ERR: Run from the bloodBender repository root (missing ./run_lstm_inference.sh)." >&2
@@ -99,6 +109,17 @@
             shellHook = ''
               export PYTHONPATH="$PWD''${PYTHONPATH:+:$PYTHONPATH}"
               echo "bloodBender nix shell active"
+            '';
+          };
+
+          inference = pkgs.mkShell {
+            packages = [
+              self.packages.${pkgs.system}.bloodbender-inference-env
+            ];
+
+            shellHook = ''
+              export PYTHONPATH="$PWD''${PYTHONPATH:+:$PYTHONPATH}"
+              echo "bloodBender inference nix shell active"
             '';
           };
         });

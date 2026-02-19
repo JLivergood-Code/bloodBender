@@ -58,6 +58,7 @@ venv/
 **/.env
 **/secret.py
 !**/.env.example
+!bloodBath/secret.py
 
 # IDE settings
 **/.vscode/

@@ -28,6 +28,10 @@
 # Include shell run file
 !run_lstm_inference.sh
 
+# Include Nix flake files
+!flake.nix
+!flake.lock
+
 # Include README and documentation
 !README.md
 !CODEBASE_CONTEXT.md

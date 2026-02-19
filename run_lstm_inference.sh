@@ -10,9 +10,19 @@
 set -euo pipefail
 
 # 0) Activate environment and set project paths
-source /home/bolt/projects/bb/bloodBath-env/bin/activate
-cd /home/bolt/projects/bb
-export PYTHONPATH=/home/bolt/projects/bb
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="${BLOODBENDER_ROOT:-$SCRIPT_DIR}"
+
+if [[ "${NO_VENV:-0}" != "1" ]]; then
+  if [[ -n "${VENV_PATH:-}" && -f "${VENV_PATH}/bin/activate" ]]; then
+    source "${VENV_PATH}/bin/activate"
+  elif [[ -f "${REPO_ROOT}/bloodBath-env/bin/activate" ]]; then
+    source "${REPO_ROOT}/bloodBath-env/bin/activate"
+  fi
+fi
+
+cd "${REPO_ROOT}"
+export PYTHONPATH="${REPO_ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
 
 # 1) Select pump and locate latest inputs/artifacts
 PUMP_ID="${PUMP_ID:-901161470}"   # override with: PUMP_ID=881235 ./run_lstm_inference.sh

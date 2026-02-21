@@ -8,7 +8,7 @@ A clean, testable, modular Python package for synchronizing historical data from
 - **Modular architecture**: Clean separation of concerns with dedicated modules
 - **LSTM-ready output**: Generate 5-minute aggregated datasets optimized for LSTM training
 - **Robust error handling**: Comprehensive error handling with retry logic
-- **Flexible CLI**: Command-line interface with multiple sync options
+- **Single sync command**: One canonical sync command with flags for pump/date targeting
 - **Data validation**: Built-in data quality checks and validation
 - **Incremental sync**: Update mode for syncing only new data
 
@@ -57,14 +57,17 @@ if success:
 # Test connection
 python -m bloodBath test --email your@email.com --password your_password
 
-# Sync a single pump
-python -m bloodBath sync --pump-serial 123456 --start-date 2024-01-01
+# Full sync (default): all discovered pumps, full available ranges
+python -m bloodBath sync
 
-# Sync multiple pumps from config file
-python -m bloodBath sync --config pump_configs.json
+# Sync specific pumps
+python -m bloodBath sync --pump-serials 881235 901161470
 
-# Update mode (only sync new data)
-python -m bloodBath sync --pump-serial 123456 --update
+# Sync explicit date range
+python -m bloodBath sync --pump-serial 123456 --start-date 2024-01-01 --end-date 2024-12-31
+
+# Show available ranges and planned sync ranges
+python -m bloodBath available-data
 
 # Generate LSTM dataset
 python -m bloodBath lstm --pump-serial 123456
@@ -158,16 +161,17 @@ The package generates 5-minute aggregated datasets with the following columns:
 ### File Structure
 
 ```
-sweetBlood/
-├── sync_metadata.json           # Sync metadata and status
-├── pump_123456/                # Per-pump data directories
-│   ├── cgmreading_*.csv        # CGM readings
-│   ├── basal_*.csv             # Basal events
-│   └── bolus_*.csv             # Bolus events
-└── data/
-    └── lstm_ready/
-        ├── lstm_ready_123456.csv    # LSTM dataset per pump
-        └── lstm_ready_combined.csv  # Combined multi-pump dataset
+bloodBank/
+├── raw/
+│   ├── cgm/{serial}/           # Raw CGM CSV files
+│   ├── basal/{serial}/         # Raw basal CSV files
+│   ├── bolus/{serial}/         # Raw bolus CSV files
+│   ├── lstm/                   # Raw LSTM-ready merged files
+│   └── metadata/               # Sync metadata and per-run reports
+└── merged/
+  ├── train/                  # Chronological train split files
+  ├── validate/               # Chronological validation split files
+  └── test/                   # Chronological test split files
 ```
 
 ## Error Handling

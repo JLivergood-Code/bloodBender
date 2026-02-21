@@ -57,6 +57,8 @@ class SweetBloodIntegration:
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_PUMP_SERIALS = ['881235', '901161470', '1539514']
+
 
 def setup_cli_logging(verbose: bool = False, structure: Optional[Dict[str, Path]] = None):
     """Setup logging for CLI"""
@@ -86,17 +88,17 @@ Examples:
   # Create .env template file for credentials
   python -m bloodBath.cli.main create-env
 
-  # Production sync with harvest management (recommended for training data)
-  python -m bloodBath.cli.main production-sync --pump-serial 123456
+    # Full sync (default): all discovered pumps, full available range, chunked
+    python -m bloodBath.cli.main sync
 
-  # Production sync all pumps with auto-detection
-  python -m bloodBath.cli.main production-sync
+    # Sync specific pumps across full available ranges
+    python -m bloodBath.cli.main sync --pump-serials 881235 901161470
 
-  # Force regenerate all training data
-  python -m bloodBath.cli.main production-sync --force-regenerate
+    # Sync specific range for a pump
+    python -m bloodBath.cli.main sync --pump-serial 123456 --start-date 2024-01-01 --end-date 2024-06-30
 
-  # Legacy sync single pump with default config
-  python -m bloodBath.cli.main sync --pump-serial 123456
+    # See available ranges and what sync would pull
+    python -m bloodBath.cli.main available-data
 
   # Generate unified LSTM sequences with new pipeline
   python -m bloodBath.cli.main unified-lstm --pump-serial 123456
@@ -142,7 +144,12 @@ Examples:
     )
     sync_parser.add_argument(
         '--pump-serial',
-        help='Single pump serial number to sync (can also use PUMP_SERIAL_NUMBER env var)'
+        help='Single pump serial number to sync'
+    )
+    sync_parser.add_argument(
+        '--pump-serials',
+        nargs='+',
+        help='One or more pump serial numbers to sync'
     )
     sync_parser.add_argument(
         '--start-date',
@@ -155,7 +162,12 @@ Examples:
     sync_parser.add_argument(
         '--update',
         action='store_true',
-        help='Update mode: only sync new data since last sync'
+        help='Sync only new data since last successful sync'
+    )
+    sync_parser.add_argument(
+        '--full-sync',
+        action='store_true',
+        help='Force full-range sync (default behavior)'
     )
     sync_parser.add_argument(
         '--force-full',
@@ -170,8 +182,8 @@ Examples:
     sync_parser.add_argument(
         '--chunk-days',
         type=int,
-        default=30,
-        help='Number of days per chunk (default: 30)'
+        default=15,
+        help='Number of days per API chunk (default: 15)'
     )
     sync_parser.add_argument(
         '--max-retries',
@@ -179,11 +191,11 @@ Examples:
         default=5,
         help='Maximum retry attempts (default: 5)'
     )
-    sync_parser.add_argument(
-        '--auto-discover',
-        action='store_true',
-        help='Auto-discover and sync all pumps on the account'
-    )
+    available_data_parser = subparsers.add_parser('available-data', help='Show available per-pump data ranges and planned sync ranges')
+    available_data_parser.add_argument('--pump-serial', help='Single pump serial number filter')
+    available_data_parser.add_argument('--pump-serials', nargs='+', help='Multiple pump serial number filter')
+    available_data_parser.add_argument('--start-date', help='Optional planned sync start date override (YYYY-MM-DD)')
+    available_data_parser.add_argument('--end-date', help='Optional planned sync end date override (YYYY-MM-DD)')
     
     # LSTM command
     lstm_parser = subparsers.add_parser('lstm', help='Generate LSTM-ready dataset')
@@ -259,34 +271,6 @@ Examples:
     
     # Test command
     test_parser = subparsers.add_parser('test', help='Test API connection')
-    
-    # Production Sync Command (new integrated sync)
-    production_sync_parser = subparsers.add_parser('production-sync', help='Production data synchronization with harvest management')
-    production_sync_parser.add_argument(
-        '--pump-serial',
-        help='Pump serial number (can also use PUMP_SERIAL_NUMBER env var)'
-    )
-    production_sync_parser.add_argument(
-        '--output-dir',
-        default=str(DATA_PATHS['merged']['train']),
-        help=f'Output directory for training data (default: {DATA_PATHS["merged"]["train"]})'
-    )
-    production_sync_parser.add_argument(
-        '--force-regenerate',
-        action='store_true',
-        help='Force regeneration of all files even if they exist'
-    )
-    production_sync_parser.add_argument(
-        '--disable-validation',
-        action='store_true',
-        help='Disable quality validation'
-    )
-    production_sync_parser.add_argument(
-        '--chunk-days',
-        type=int,
-        default=15,
-        help='API chunk size in days (default: 15)'
-    )
     
     # Create .env template command
     env_parser = subparsers.add_parser('create-env', help='Create .env template file')
@@ -436,6 +420,56 @@ def auto_discover_pumps(client, start_date, end_date):
         return []
 
 
+def _resolve_target_serials(args, discovered_serials: Optional[List[str]] = None) -> List[str]:
+    """Resolve target pump serial list from args/discovery/defaults."""
+    explicit = []
+    if getattr(args, 'pump_serial', None):
+        explicit.append(str(args.pump_serial))
+    if getattr(args, 'pump_serials', None):
+        explicit.extend([str(serial) for serial in args.pump_serials])
+
+    if explicit:
+        return list(dict.fromkeys(explicit))
+
+    if discovered_serials:
+        return list(dict.fromkeys(discovered_serials))
+
+    return list(DEFAULT_PUMP_SERIALS)
+
+
+def _build_pump_configs_for_sync(args, client) -> List[PumpConfig]:
+    """Build pump configs with default full-range behavior for selected pumps."""
+    pumps_info = analyze_pump_activity(client, args.region)
+    discovered_serials = list(pumps_info.keys()) if pumps_info else []
+    target_serials = _resolve_target_serials(args, discovered_serials)
+
+    if not target_serials:
+        print("Error: No pumps resolved for sync")
+        sys.exit(1)
+
+    configs = []
+    for serial in target_serials:
+        user_start = args.start_date
+        user_end = args.end_date
+
+        if user_start and user_end:
+            start_date = user_start
+            end_date = user_end
+        elif serial in pumps_info and pumps_info[serial].get('first_event') and pumps_info[serial].get('last_event'):
+            available_start = pumps_info[serial]['first_event'].strftime('%Y-%m-%d')
+            available_end = pumps_info[serial]['last_event'].strftime('%Y-%m-%d')
+            start_date = user_start or available_start
+            end_date = user_end or available_end
+        else:
+            end_date = user_end or datetime.now().strftime('%Y-%m-%d')
+            start_date = user_start or (datetime.now() - timedelta(days=90)).strftime('%Y-%m-%d')
+            print(f"⚠️  Could not detect full range for pump {serial}; using {start_date} to {end_date}")
+
+        configs.append(PumpConfig(serial=serial, start_date=start_date, end_date=end_date))
+
+    return configs
+
+
 def cmd_sync(args):
     """Handle sync command"""
     setup_cli_logging(args.verbose)
@@ -461,12 +495,11 @@ def cmd_sync(args):
             for path in paths.values():
                 path.mkdir(parents=True, exist_ok=True)
     
-    # Initialize client with bloodBank data directory
+    # Initialize client with standard bloodBank layout
     client = TandemHistoricalSyncClient(
         email=creds.email,
         password=creds.password,
         region=creds.region,
-        output_dir=str(DATA_PATHS['raw']['lstm']),  # Use bloodBank LSTM directory
         chunk_days=args.chunk_days,
         max_retries=args.max_retries
     )
@@ -476,19 +509,16 @@ def cmd_sync(args):
         print("Error: Unable to connect to Tandem API")
         sys.exit(1)
     
-    # Load pump configurations with client for date range detection
-    configs = load_pump_configs_from_args(args, client)
-    
-    # Handle auto-discovery if requested
-    if args.auto_discover:
-        print("Auto-discovering pumps...")
-        end_date = args.end_date or datetime.now().strftime('%Y-%m-%d')
-        start_date = args.start_date or (datetime.now() - timedelta(days=90)).strftime('%Y-%m-%d')
-        
-        configs = auto_discover_pumps(client, start_date, end_date)
-        if not configs:
-            print("No pumps found for synchronization")
-            sys.exit(0)
+    if args.config:
+        configs = load_pump_configs(args.config)
+    else:
+        configs = _build_pump_configs_for_sync(args, client)
+
+    if not configs:
+        print("No pumps found for synchronization")
+        sys.exit(0)
+
+    update_mode = args.update and not args.full_sync
     
     print(f"Starting sync for {len(configs)} pump(s)...")
     print(f"Data will be organized in bloodBank structure: {BLOODBANK_ROOT}")
@@ -506,7 +536,7 @@ def cmd_sync(args):
     # Sync pumps
     results = client.sync_multiple_pumps(
         configs,
-        update_mode=args.update,
+        update_mode=update_mode,
         force_full=args.force_full,
         parallel=args.parallel
     )
@@ -533,7 +563,10 @@ def cmd_sync(args):
     print(f"  Basal events: {stats['extraction_stats']['event_counts']['basal']}")
     print(f"  Bolus events: {stats['extraction_stats']['event_counts']['bolus']}")
     
-    print(f"\nData organized in sweetBlood structure:")
+    print(f"\nData organized in bloodBank structure:")
+    print(f"  Raw CGM directory: {DATA_PATHS['raw']['cgm']}")
+    print(f"  Raw Basal directory: {DATA_PATHS['raw']['basal']}")
+    print(f"  Raw Bolus directory: {DATA_PATHS['raw']['bolus']}")
     print(f"  Raw LSTM directory: {DATA_PATHS['raw']['lstm']}")
     print(f"  Training directory: {DATA_PATHS['merged']['train']}")
     print(f"  Validation directory: {DATA_PATHS['merged']['validate']}")
@@ -938,13 +971,10 @@ def cmd_test(args):
         print("  3. .env file (use 'python -m bloodBath create-env' to create template)")
         sys.exit(1)
     
-    internal_sweetblood_path = str(Path(__file__).parent.parent / 'sweetBlood')
-    sweetblood_structure = setup_sweetblood_environment(internal_sweetblood_path)
     client = TandemHistoricalSyncClient(
         email=creds.email,
         password=creds.password,
         region=creds.region,
-        output_dir=str(sweetblood_structure['lstm_pump_data'])
     )
     
     print("Testing API connection...")
@@ -959,6 +989,54 @@ def cmd_test(args):
     else:
         print("✗ Connection failed")
         sys.exit(1)
+
+
+def cmd_available_data(args):
+    """Show available per-pump data ranges and planned sync range."""
+    setup_cli_logging(args.verbose)
+
+    creds = get_credentials(args.email, args.password, args.region)
+    if not creds.is_valid():
+        print("Error: Missing credentials")
+        print("Please provide credentials via CLI args, env vars, or .env file")
+        sys.exit(1)
+
+    client = TandemHistoricalSyncClient(
+        email=creds.email,
+        password=creds.password,
+        region=creds.region,
+    )
+
+    if not client.test_connection():
+        print("Error: Unable to connect to Tandem API")
+        sys.exit(1)
+
+    pumps_info = analyze_pump_activity(client, creds.region)
+    serials = _resolve_target_serials(args, list(pumps_info.keys()))
+
+    print("=" * 80)
+    print("AVAILABLE PUMP DATA RANGES")
+    print("=" * 80)
+
+    for serial in serials:
+        info = pumps_info.get(serial)
+        if not info or not info.get('first_event') or not info.get('last_event'):
+            print(f"\nPump {serial}")
+            print("  Available range: unknown")
+            print("  Planned sync range: fallback 90-day window")
+            continue
+
+        available_start = info['first_event'].strftime('%Y-%m-%d')
+        available_end = info['last_event'].strftime('%Y-%m-%d')
+        planned_start = args.start_date or available_start
+        planned_end = args.end_date or available_end
+
+        print(f"\nPump {serial}")
+        print(f"  Available range: {available_start} to {available_end}")
+        print(f"  Planned sync range: {planned_start} to {planned_end}")
+        print(f"  Status: {info.get('status', 'Unknown')}")
+
+    client.disconnect()
 
 
 def main():
@@ -981,8 +1059,8 @@ def main():
         cmd_lstm(args)
     elif args.command == 'unified-lstm':
         cmd_unified_lstm(args)
-    elif args.command == 'production-sync':
-        cmd_production_sync(args)
+    elif args.command == 'available-data':
+        cmd_available_data(args)
     elif args.command == 'status':
         cmd_status(args)
     elif args.command == 'create-config':

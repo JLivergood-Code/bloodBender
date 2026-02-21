@@ -19,16 +19,8 @@ This directory implements the unified bloodBank v2.0 data architecture for compr
 - `test/` (15%): Test dataset for final model evaluation
 - `full/`: Complete processed sequences before splitting
 
-### 📁 archives/ - Legacy and Logs
-**Purpose**: Legacy data preservation and operational tracking
-- `legacy/`: Migrated sweetBlood data for compatibility
-- `logs/`: System logs, sync reports, and error tracking
-
-### 📁 models/ - ML Models
-**Purpose**: Trained models and training artifacts
-- Trained LSTM models for glucose prediction
-- Model checkpoints and configurations
-- Training metrics and evaluation reports
+### 📁 archives/ - Legacy and Logs (optional)
+**Purpose**: Legacy preservation and operational tracking when needed
 
 ## Data Flow
 
@@ -52,14 +44,17 @@ Raw Pump Data → Validation → LSTM Processing → Train/Val/Test Splits → M
 
 Initialize and sync data:
 ```bash
-# Full resynchronization (4+ years)
-python full_bloodbank_resync.py
+# Full sync (default): all discovered pumps, full available date ranges
+python -m bloodBath sync
 
-# Incremental updates
-python -m bloodBath sync --pump-serial 881235 --update-mode
+# Incremental update for selected pump
+python -m bloodBath sync --pump-serial 881235 --update
 
-# Validation and reports
-python -m bloodBath validate --pump-serial all
+# Show available ranges and planned sync ranges
+python -m bloodBath available-data
+
+# Sync explicit date range
+python -m bloodBath sync --pump-serial 881235 --start-date 2024-01-01 --end-date 2024-12-31
 ```
 
 Access processed data:

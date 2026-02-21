@@ -64,7 +64,7 @@
                 exit 1
               fi
               export PYTHONPATH="$PWD''${PYTHONPATH:+:$PYTHONPATH}"
-              exec python -m bloodBath.cli.main production-sync "$@"
+              exec python -m bloodBath.cli.main sync "$@"
             '';
           };
 
@@ -77,7 +77,20 @@
                 exit 1
               fi
               export PYTHONPATH="$PWD''${PYTHONPATH:+:$PYTHONPATH}"
-              exec python -m bloodBath.cli.main production-sync --chunk-days "''${SYNC_CHUNK_DAYS:-15}" "$@"
+              exec python -m bloodBath.cli.main sync --full-sync --chunk-days "''${SYNC_CHUNK_DAYS:-15}" "$@"
+            '';
+          };
+
+          available-data = pkgs.writeShellApplication {
+            name = "available-data";
+            runtimeInputs = [ pythonSyncEnv ];
+            text = ''
+              if [[ ! -d "$PWD/bloodBath" ]]; then
+                echo "ERR: Run from the bloodBender repository root (missing ./bloodBath)." >&2
+                exit 1
+              fi
+              export PYTHONPATH="$PWD''${PYTHONPATH:+:$PYTHONPATH}"
+              exec python -m bloodBath.cli.main available-data "$@"
             '';
           };
 
@@ -112,6 +125,11 @@
           run-inference = {
             type = "app";
             program = "${self.packages.${pkgs.system}.run-inference}/bin/run-inference";
+          };
+
+          available-data = {
+            type = "app";
+            program = "${self.packages.${pkgs.system}.available-data}/bin/available-data";
           };
 
           default = self.apps.${pkgs.system}.sync-data;

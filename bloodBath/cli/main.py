@@ -8,7 +8,7 @@ import json
 import logging
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import List, Optional, Union, Dict
+from typing import List, Optional, Dict
 
 from ..core import (
     TandemHistoricalSyncClient, 
@@ -16,23 +16,18 @@ from ..core import (
     load_pump_configs, 
     create_default_pump_configs,
     get_credentials,
-    get_default_pump_serial,
-    load_credentials_from_env
+    get_default_pump_serial
 )
 from ..core.config import DATA_PATHS, BLOODBANK_ROOT
 from ..utils.logging_utils import setup_logger
 from ..utils.env_utils import (
     create_env_template, 
-    get_env_file_locations, 
-    validate_credentials,
-    get_timezone_name,
-    get_pump_serial_number,
-    get_cache_credentials_setting
+    get_env_file_locations
 )
-from ..utils.pump_info import get_optimal_sync_range, analyze_pump_activity, print_pump_summary
+from ..utils.pump_info import analyze_pump_activity, print_pump_summary
 # DEPRECATED: sweetBlood module removed in favor of bloodBank v2.0 architecture
 # from ..sweetBlood import add_sweetblood_args, handle_sweetblood_commands, SweetBloodIntegration
-from ..utils.structure_utils import setup_bloodbank_environment, setup_sweetblood_environment
+from ..utils.structure_utils import setup_sweetblood_environment
 
 # Compatibility stubs for legacy sweetBlood functionality
 def add_sweetblood_args(parser):
@@ -289,135 +284,6 @@ Examples:
     add_sweetblood_args(parser)
     
     return parser
-
-
-def load_pump_configs_from_args(args, client=None) -> List[PumpConfig]:
-    """Load pump configurations from command line arguments"""
-    configs = []
-    
-    if args.config:
-        # Load from configuration file
-        configs = load_pump_configs(args.config)
-        if not configs:
-            print(f"Error: No pump configurations found in {args.config}")
-            sys.exit(1)
-    elif args.pump_serial:
-        # Create single pump config from arguments
-        pump_serial = args.pump_serial
-        
-        # Try to get optimal date range from pump info if client is available
-        if client and not args.start_date and not args.end_date:
-            print(f"🔍 Checking actual data range for pump {pump_serial}...")
-            try:
-                optimal_range = get_optimal_sync_range(client, pump_serial)
-                if optimal_range:
-                    print(f"✅ Found active data range: {optimal_range['start_date']} to {optimal_range['end_date']}")
-                    print(f"   Duration: {optimal_range['duration_days']} days")
-                    print(f"   Status: {optimal_range['status']}")
-                    start_date = optimal_range['start_date']
-                    end_date = optimal_range['end_date']
-                else:
-                    print("⚠️  No active data range found, using default dates")
-                    end_date = args.end_date or datetime.now().strftime('%Y-%m-%d')
-                    start_date = args.start_date or (datetime.now() - timedelta(days=90)).strftime('%Y-%m-%d')
-            except Exception as e:
-                print(f"⚠️  Error getting pump date range: {e}")
-                end_date = args.end_date or datetime.now().strftime('%Y-%m-%d')
-                start_date = args.start_date or (datetime.now() - timedelta(days=90)).strftime('%Y-%m-%d')
-        else:
-            # Use provided dates or defaults
-            end_date = args.end_date or datetime.now().strftime('%Y-%m-%d')
-            start_date = args.start_date or (datetime.now() - timedelta(days=90)).strftime('%Y-%m-%d')
-        
-        config = PumpConfig(
-            serial=pump_serial,
-            start_date=start_date,
-            end_date=end_date
-        )
-        configs.append(config)
-    elif args.auto_discover:
-        # Auto-discover pumps will be handled in cmd_sync after client is created
-        configs = []
-    else:
-        # Try to get pump serial from environment
-        env_pump_serial = get_default_pump_serial()
-        if env_pump_serial:
-            pump_serial = env_pump_serial
-            
-            # Try to get optimal date range from pump info if client is available
-            if client and not args.start_date and not args.end_date:
-                print(f"🔍 Checking actual data range for pump {pump_serial}...")
-                try:
-                    optimal_range = get_optimal_sync_range(client, pump_serial)
-                    if optimal_range:
-                        print(f"✅ Found active data range: {optimal_range['start_date']} to {optimal_range['end_date']}")
-                        print(f"   Duration: {optimal_range['duration_days']} days")
-                        print(f"   Status: {optimal_range['status']}")
-                        start_date = optimal_range['start_date']
-                        end_date = optimal_range['end_date']
-                    else:
-                        print("⚠️  No active data range found, using default dates")
-                        end_date = args.end_date or datetime.now().strftime('%Y-%m-%d')
-                        start_date = args.start_date or (datetime.now() - timedelta(days=90)).strftime('%Y-%m-%d')
-                except Exception as e:
-                    print(f"⚠️  Error getting pump date range: {e}")
-                    end_date = args.end_date or datetime.now().strftime('%Y-%m-%d')
-                    start_date = args.start_date or (datetime.now() - timedelta(days=90)).strftime('%Y-%m-%d')
-            else:
-                # Use provided dates or defaults
-                end_date = args.end_date or datetime.now().strftime('%Y-%m-%d')
-                start_date = args.start_date or (datetime.now() - timedelta(days=90)).strftime('%Y-%m-%d')
-            
-            config = PumpConfig(
-                serial=pump_serial,
-                start_date=start_date,
-                end_date=end_date
-            )
-            configs.append(config)
-            print(f"Using pump serial from environment: {pump_serial}")
-        else:
-            print("Error: Must specify either --config, --pump-serial, --auto-discover, or set PUMP_SERIAL_NUMBER env var")
-            sys.exit(1)
-    
-    return configs
-
-
-def auto_discover_pumps(client, start_date, end_date):
-    """
-    Auto-discover all pumps on the account and create configs for them
-    
-    Args:
-        client: TandemHistoricalSyncClient instance
-        start_date: Start date for sync
-        end_date: End date for sync
-        
-    Returns:
-        List of PumpConfig objects for all discovered pumps
-    """
-    try:
-        # Get pump metadata for all pumps on the account
-        api = client.connector.get_api()
-        pump_metadata = api.tandemsource.pump_event_metadata()
-        
-        configs = []
-        print(f"Discovered {len(pump_metadata)} pump(s) on account:")
-        
-        for pump_info in pump_metadata:
-            serial = pump_info.get('serialNumber')
-            if serial:
-                config = PumpConfig(
-                    serial=serial,
-                    start_date=start_date,
-                    end_date=end_date
-                )
-                configs.append(config)
-                print(f"  - Pump {serial}")
-        
-        return configs
-        
-    except Exception as e:
-        logger.error(f"Error discovering pumps: {e}")
-        return []
 
 
 def _resolve_target_serials(args, discovered_serials: Optional[List[str]] = None) -> List[str]:
@@ -888,71 +754,6 @@ def cmd_create_env(args):
         
     except Exception as e:
         print(f"Error creating .env template: {e}")
-        sys.exit(1)
-
-
-def cmd_production_sync(args):
-    """Handle production sync command with integrated harvest management"""
-    setup_cli_logging(args.verbose)
-    
-    try:
-        from ..sync.sync_engine import SyncEngine
-    except ImportError:
-        print("❌ Production sync module not available")
-        print("💡 The production sync functionality has been integrated into bloodBath")
-        print("   Use the existing commands for now:")
-        print("   • python -m bloodBath.cli.main sync --pump-serial YOUR_SERIAL")
-        print("   • python -m bloodBath.cli.main unified-lstm --pump-serial YOUR_SERIAL")
-        sys.exit(1)
-    
-    # Get pump serial from args or environment
-    pump_serial = args.pump_serial or get_default_pump_serial()
-    
-    print("🚀 bloodBath Production Sync")
-    print("="*60)
-    print(f"Output Directory: {args.output_dir}")
-    print(f"Chunk Size: {args.chunk_days} days")
-    print(f"Force Regenerate: {args.force_regenerate}")
-    print(f"Validation: {'Disabled' if args.disable_validation else 'Enabled'}")
-    
-    # Initialize sync engine
-    sync_engine = SyncEngine(output_dir=args.output_dir, chunk_days=args.chunk_days)
-    
-    try:
-        # Perform sync operation
-        result = sync_engine.sync(
-            pump_serial=pump_serial,
-            force_refresh=args.force_regenerate,
-            enable_validation=not args.disable_validation
-        )
-        
-        if result.get('success', False):
-            print("\n✅ Production sync integration verified!")
-            
-            if 'message' in result:
-                print(f"📋 {result['message']}")
-            
-            # Show results summary
-            if 'pump_results' in result:
-                for pump, pump_result in result['pump_results'].items():
-                    if pump_result.get('success', False):
-                        print(f"   Pump {pump}: Ready for sync")
-            
-            print(f"\n📚 RECOMMENDED WORKFLOW:")
-            print(f"1. Sync raw data:")
-            print(f"   python -m bloodBath.cli.main sync --pump-serial {pump_serial or 'YOUR_SERIAL'}")
-            print(f"2. Generate LSTM training data:")
-            print(f"   python -m bloodBath.cli.main unified-lstm --pump-serial {pump_serial or 'YOUR_SERIAL'}")
-            print(f"3. Check status:")
-            print(f"   python -m bloodBath.cli.main status")
-            
-        else:
-            print(f"\n❌ Production sync failed: {result.get('error', 'Unknown error')}")
-            sys.exit(1)
-        
-    except Exception as e:
-        print(f"\n❌ Production sync failed: {e}")
-        logger.error(f"Production sync error: {e}")
         sys.exit(1)
 
 

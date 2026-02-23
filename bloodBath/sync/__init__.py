@@ -5,6 +5,15 @@ This module provides comprehensive data synchronization capabilities for bloodBa
 including production data harvesting, incremental sync, and data validation.
 """
 
+import warnings
+
+warnings.warn(
+    "bloodBath.sync is deprecated and not used by the canonical CLI sync flow. "
+    "Use `python -m bloodBath.cli.main sync` (or nix app `.#sync-data`) instead.",
+    DeprecationWarning,
+    stacklevel=2
+)
+
 try:
     from .harvest_manager import HarvestManager
     from .sync_engine import SyncEngine

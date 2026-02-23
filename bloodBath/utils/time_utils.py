@@ -81,19 +81,22 @@ def generate_date_chunks(start_date: str,
     Returns:
         List of (start_date, end_date) tuples
     """
-    start = arrow.get(start_date)
-    end = arrow.get(end_date)
+    start = arrow.get(start_date).floor('day')
+    end = arrow.get(end_date).floor('day')
+
+    if chunk_days < 1:
+        raise ValueError("chunk_days must be >= 1")
     
     chunks = []
     current = start
-    
-    while current < end:
-        chunk_end = min(current.shift(days=chunk_days), end)
+
+    while current <= end:
+        chunk_end = min(current.shift(days=chunk_days - 1), end)
         chunks.append((
             current.format('YYYY-MM-DD'),
             chunk_end.format('YYYY-MM-DD')
         ))
-        current = chunk_end
+        current = chunk_end.shift(days=1)
     
     return chunks
 

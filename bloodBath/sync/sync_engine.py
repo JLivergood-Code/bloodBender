@@ -3,11 +3,15 @@ Sync Engine for bloodBath - Lightweight synchronization interface
 
 Provides a simplified interface for common sync operations, 
 wrapping the HarvestManager functionality.
+
+DEPRECATED: This module is kept for backward compatibility. The canonical
+sync flow is `bloodBath.cli.main sync`.
 """
 
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Optional, Any
+import warnings
 from .harvest_manager import HarvestManager
 
 
@@ -23,6 +27,12 @@ class SyncEngine:
         Args:
             output_dir: Directory for training data output
         """
+        warnings.warn(
+            "SyncEngine is deprecated; use `python -m bloodBath.cli.main sync` "
+            "or nix app `.#sync-data`.",
+            DeprecationWarning,
+            stacklevel=2
+        )
         self.output_dir = Path(output_dir)
         self.harvest_manager = HarvestManager(str(output_dir), chunk_days=chunk_days)
     

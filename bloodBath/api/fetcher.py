@@ -7,6 +7,7 @@ import logging
 import requests
 from typing import List, Dict, Any, Optional, Tuple
 import pandas as pd
+from datetime import datetime, timedelta
 
 from ..core.config import PumpConfig
 from ..core.exceptions import (
@@ -65,6 +66,7 @@ class TandemDataFetcher:
         """
         # Generate date chunks
         chunks = generate_date_chunks(start_date, end_date, self.chunk_days)
+        self._validate_chunks_contiguous(chunks)
         logger.info(f"Fetching data for pump {pump_config.serial} in {len(chunks)} chunks")
         
         all_events = []
@@ -88,6 +90,25 @@ class TandemDataFetcher:
         
         logger.info(f"Total events fetched for pump {pump_config.serial}: {len(all_events)}")
         return all_events
+
+    def _validate_chunks_contiguous(self, chunks: List[Tuple[str, str]]) -> None:
+        """Validate chunk ranges are contiguous and non-overlapping by date."""
+        if not chunks:
+            return
+
+        for index in range(1, len(chunks)):
+            prev_start, prev_end = chunks[index - 1]
+            curr_start, curr_end = chunks[index]
+
+            prev_end_dt = datetime.strptime(prev_end, "%Y-%m-%d")
+            curr_start_dt = datetime.strptime(curr_start, "%Y-%m-%d")
+            expected_next_start = prev_end_dt + timedelta(days=1)
+
+            if curr_start_dt != expected_next_start:
+                raise TandemSyncError(
+                    "Non-contiguous chunk sequence detected: "
+                    f"previous [{prev_start}..{prev_end}] followed by [{curr_start}..{curr_end}]"
+                )
     
     def _fetch_pump_data_chunk(self, 
                               pump_config: PumpConfig,

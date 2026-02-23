@@ -1349,7 +1349,7 @@ def load_pump_configs(config_file: str) -> List[PumpConfig]:
         logger.error(f"Error loading pump configs from {config_file}: {e}")
         return []
 
-
+# TODO REMOVE THIS
 def create_default_pump_configs() -> List[PumpConfig]:
     """Create default pump configurations"""
     return [

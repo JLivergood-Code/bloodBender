@@ -18,6 +18,7 @@ from ..utils.file_utils import (
     save_lstm_ready_data, get_output_filename, get_lstm_output_path,
     load_csv_with_datetime, find_most_recent_files, merge_csv_files
 )
+from .config import DATA_PATHS
 from ..utils.logging_utils import get_logger
 
 logger = get_logger(__name__)
@@ -125,8 +126,13 @@ class TandemHistoricalSyncClient:
                 logger.warning(f"No events fetched for pump {pump_config.serial}")
                 return True  # Not an error, just no data
             
-            # Process events into LSTM-ready format
-            lstm_df = self._process_events_to_lstm(raw_events)
+            # Process events into LSTM-ready format and persist raw typed CSVs
+            lstm_df = self._process_events_to_lstm(
+                raw_events,
+                pump_serial=pump_config.serial,
+                start_date=start_date,
+                end_date=end_date
+            )
             
             if lstm_df.empty:
                 logger.warning(f"No valid data after processing for pump {pump_config.serial}")
@@ -162,6 +168,14 @@ class TandemHistoricalSyncClient:
                     metadata,
                     f'sync_{pump_config.serial}_{pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")}.json'
                 )
+
+                # Save chronological split datasets for training workflow
+                self._save_chronological_splits(
+                    lstm_df=lstm_df,
+                    pump_serial=pump_config.serial,
+                    start_date=start_date,
+                    end_date=end_date
+                )
                 
             # Update sync metadata
             self._update_sync_metadata(pump_config.serial, end_date, len(lstm_df))
@@ -190,7 +204,7 @@ class TandemHistoricalSyncClient:
             
             return False
     
-    def _process_events_to_lstm(self, raw_events: List[Any]) -> pd.DataFrame:
+    def _process_events_to_lstm(self, raw_events: List[Any], pump_serial: str, start_date: str, end_date: str) -> pd.DataFrame:
         """
         Process raw events into LSTM-ready format
         
@@ -218,31 +232,90 @@ class TandemHistoricalSyncClient:
         basal_data = self.extractor.deduplicate_events(basal_data)
         bolus_data = self.extractor.deduplicate_events(bolus_data)
         
-        # Step 5: Save individual CSV files if data exists
-        timestamp = pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')
-        
-        if cgm_data:
-            cgm_df = pd.DataFrame(cgm_data)
-            cgm_file = Path(self.output_dir) / f'cgmreading_{timestamp}.csv'
-            cgm_df.to_csv(cgm_file, index=False)
-            logger.info(f"Saved CGM data to {cgm_file}")
-        
-        if basal_data:
-            basal_df = pd.DataFrame(basal_data)
-            basal_file = Path(self.output_dir) / f'basal_{timestamp}.csv'
-            basal_df.to_csv(basal_file, index=False)
-            logger.info(f"Saved basal data to {basal_file}")
-        
-        if bolus_data:
-            bolus_df = pd.DataFrame(bolus_data)
-            bolus_file = Path(self.output_dir) / f'bolus_{timestamp}.csv'
-            bolus_df.to_csv(bolus_file, index=False)
-            logger.info(f"Saved bolus data to {bolus_file}")
+        # Step 5: Save typed raw CSV files in bloodBank/raw/{type}/{serial}
+        self._save_raw_event_csvs(
+            pump_serial=pump_serial,
+            cgm_data=cgm_data,
+            basal_data=basal_data,
+            bolus_data=bolus_data,
+            start_date=start_date,
+            end_date=end_date
+        )
         
         # Step 6: Create LSTM-ready dataset
         lstm_df = self.processor.create_lstm_ready_data(cgm_data, basal_data, bolus_data)
         
         return lstm_df
+
+    def _save_raw_event_csvs(self,
+                             pump_serial: str,
+                             cgm_data: List[Dict[str, Any]],
+                             basal_data: List[Dict[str, Any]],
+                             bolus_data: List[Dict[str, Any]],
+                             start_date: str,
+                             end_date: str) -> None:
+        """Persist extracted raw events in typed per-pump directories."""
+        timestamp = pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')
+        range_tag = f"{start_date}_to_{end_date}".replace(':', '-')
+
+        raw_targets = [
+            ('cgmreading', cgm_data, DATA_PATHS['raw']['cgm'] / pump_serial),
+            ('basal', basal_data, DATA_PATHS['raw']['basal'] / pump_serial),
+            ('bolus', bolus_data, DATA_PATHS['raw']['bolus'] / pump_serial),
+        ]
+
+        for prefix, rows, output_dir in raw_targets:
+            if not rows:
+                continue
+
+            output_dir.mkdir(parents=True, exist_ok=True)
+            output_file = output_dir / f"{prefix}_{range_tag}_{timestamp}.csv"
+            pd.DataFrame(rows).to_csv(output_file, index=False)
+            logger.info(f"Saved {prefix} raw data to {output_file}")
+
+    def _save_chronological_splits(self,
+                                   lstm_df: pd.DataFrame,
+                                   pump_serial: str,
+                                   start_date: str,
+                                   end_date: str) -> None:
+        """Save chronological train/validate/test splits for merged LSTM datasets."""
+        if lstm_df.empty:
+            return
+
+        split_df = lstm_df.copy()
+        if 'timestamp' in split_df.columns:
+            split_df['timestamp'] = pd.to_datetime(split_df['timestamp'], errors='coerce')
+            split_df = split_df.dropna(subset=['timestamp']).sort_values('timestamp').reset_index(drop=True)
+
+        if split_df.empty:
+            return
+
+        total = len(split_df)
+        train_end = max(int(total * 0.70), 1)
+        validate_end = max(train_end + int(total * 0.15), train_end)
+
+        train_df = split_df.iloc[:train_end]
+        validate_df = split_df.iloc[train_end:validate_end]
+        test_df = split_df.iloc[validate_end:]
+
+        timestamp = pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')
+        base_name = f"pump_{pump_serial}_{start_date}_to_{end_date}_{timestamp}.csv"
+
+        split_outputs = {
+            'train': train_df,
+            'validate': validate_df,
+            'test': test_df,
+        }
+
+        for split_name, split_data in split_outputs.items():
+            if split_data.empty:
+                continue
+
+            split_path = DATA_PATHS['merged'][split_name]
+            split_path.mkdir(parents=True, exist_ok=True)
+            output_file = split_path / base_name
+            split_data.to_csv(output_file, index=False)
+            logger.info(f"Saved {split_name} split ({len(split_data)} rows) to {output_file}")
     
     def sync_multiple_pumps(self, 
                           pump_configs: List[PumpConfig],

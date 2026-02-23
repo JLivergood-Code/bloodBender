@@ -1,7 +1,10 @@
 import struct
 import arrow
 
-from ..secret import TIMEZONE_NAME
+try:
+    from ..secret import TIMEZONE_NAME
+except Exception:
+    TIMEZONE_NAME = 'UTC'
 
 from dataclasses import dataclass
 

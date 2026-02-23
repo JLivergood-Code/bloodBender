@@ -2,6 +2,8 @@
 Command-line interface for bloodBath
 """
 
-from .main import main
+def main(*args, **kwargs):
+	from .main import main as _main
+	return _main(*args, **kwargs)
 
 __all__ = ['main']

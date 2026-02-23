@@ -30,6 +30,10 @@
 !cleanup_deprecated.sh
 !monitor_sync.sh
 
+# Include Nix flake files
+!flake.nix
+!flake.lock
+
 # Include README and documentation
 !README.md
 !CODEBASE_CONTEXT.md
@@ -73,6 +77,7 @@ result-*
 **/.env
 **/secret.py
 !**/.env.example
+!bloodBath/secret.py
 
 # IDE settings
 **/.vscode/
@@ -86,6 +91,7 @@ result-*
 **/Thumbs.db
 
 # Large data files that shouldn't be in git
+**/bloodBank/**/*.csv
 **/bloodBank/raw/**/*.csv
 **/bloodBank/archives/**/*.csv
 **/bloodBank/lstm_pump_data/**/*.csv
@@ -95,6 +101,11 @@ result-*
 !**/bloodBank/**/*.json
 !**/bloodBank/**/*.md
 !**/bloodBank/**/*.txt
+
+# Exclude raw sync metadata files
+**/bloodBank/raw/metadata/sync_*.json
+**/bloodBank/raw/sync_metadata.json
+**/bloodBath/bloodBank/merged/train/analytics/*.json
 
 # Testing and temporary files
 **/test_output/

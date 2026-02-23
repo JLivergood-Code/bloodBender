@@ -32,7 +32,7 @@
 
 # Include Nix flake files
 !flake.nix
-# !flake.lock
+!flake.lock
 
 # Include README and documentation
 !README.md

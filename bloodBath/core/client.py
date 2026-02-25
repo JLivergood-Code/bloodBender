@@ -40,7 +40,7 @@ class TandemHistoricalSyncClient:
                  chunk_days: int = 30,
                  max_retries: int = 5,
                  rate_limit_delay: int = 1,
-                 enable_data_validation: bool = True):
+                 enable_data_validation: bool = False):
         """
         Initialize the sync client
         
@@ -299,7 +299,7 @@ class TandemHistoricalSyncClient:
         test_df = split_df.iloc[validate_end:]
 
         timestamp = pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')
-        base_name = f"pump_{pump_serial}_{start_date}_to_{end_date}_{timestamp}.csv"
+        
 
         split_outputs = {
             'train': train_df,
@@ -311,12 +311,20 @@ class TandemHistoricalSyncClient:
             if split_data.empty:
                 continue
 
+            base_name = f"pump_{pump_serial}_{start_date}_to_{end_date}_{timestamp}.csv"
+            lstm_name = f"lstm_{split_name}_{pump_serial}_{timestamp}.csv"
             split_path = DATA_PATHS['merged'][split_name]
             split_path.mkdir(parents=True, exist_ok=True)
-            output_file = split_path / base_name
+            output_file = self._chron_split_path(split_path, lstm_name, pump_serial)
             split_data.to_csv(output_file, index=False)
             logger.info(f"Saved {split_name} split ({len(split_data)} rows) to {output_file}")
     
+    def _chron_split_path(self, merged_path, base_name, serial_number):
+        split_path = merged_path.parent / f"pump_{serial_number}" / merged_path.name / base_name
+        split_path.parent.mkdir(parents=True, exist_ok=True)
+        return split_path
+
+
     def sync_multiple_pumps(self, 
                           pump_configs: List[PumpConfig],
                           update_mode: bool = False,
@@ -430,7 +438,7 @@ class TandemHistoricalSyncClient:
                 return
             
             # Find all pump CSV files
-            pump_files = list(lstm_dir.glob("pump_*.csv"))
+            pump_files = list(lstm_dir.rglob("pump_*.csv"))
             
             if not pump_files:
                 logger.warning("No pump CSV files found")
@@ -448,7 +456,7 @@ class TandemHistoricalSyncClient:
                         pump_serial = 'unknown'
                     
                     # Load the data
-                    df = pd.read_csv(file_path)
+                    df = pd.read_csv(file_path, comment='#')
                     
                     # Add pump_serial column
                     df['pump_serial'] = pump_serial

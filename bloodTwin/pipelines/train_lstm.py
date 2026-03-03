@@ -144,6 +144,16 @@ def train(config_path: Path):
         )
         logger.info(f"TensorBoard logs: {log_dir}")
     
+    # Check GPU availability
+    if config['compute']['accelerator'] == "gpu" and torch.cuda.is_available():
+        logger.info(f"GPU: {torch.cuda.get_device_name(0)}")
+        logger.info(f"CUDA version: {torch.version.cuda}")
+        logger.info(f"GPU memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.2f} GB")
+    else:
+        config['compute']['accelerator'] = "auto"
+        config['compute']['devices'] = "auto"
+        logger.warning("No GPU detected! Training on CPU (slow)")
+
     # Trainer
     logger.info("Creating trainer...")
     trainer = pl.Trainer(

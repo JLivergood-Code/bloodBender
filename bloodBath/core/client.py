@@ -122,6 +122,8 @@ class TandemHistoricalSyncClient:
                 pump_config, start_date, end_date
             )
             
+            logger.info(f"Raw Events: {raw_events}")
+
             if not raw_events:
                 logger.warning(f"No events fetched for pump {pump_config.serial}")
                 return True  # Not an error, just no data

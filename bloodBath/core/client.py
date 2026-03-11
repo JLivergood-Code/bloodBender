@@ -122,7 +122,7 @@ class TandemHistoricalSyncClient:
                 pump_config, start_date, end_date
             )
             
-            logger.info(f"Raw Events: {raw_events}")
+            # logger.info(f"Raw Events: {raw_events}")
 
             if not raw_events:
                 logger.warning(f"No events fetched for pump {pump_config.serial}")
@@ -219,11 +219,24 @@ class TandemHistoricalSyncClient:
         # Step 1: Extract and categorize events
         categorized_events = self.extractor.extract_events(raw_events)
         
+        logger.info(
+            "Categorized counts: cgm=%d basal=%d bolus=%d",
+            len(categorized_events['cgm_events']),
+            len(categorized_events['basal_events']),
+            len(categorized_events['bolus_events']),
+        )
+
+
         # Step 2: Normalize each event type
         cgm_data = self.extractor.normalize_cgm_events(categorized_events['cgm_events'])
         basal_data = self.extractor.normalize_basal_events(categorized_events['basal_events'])
         bolus_data = self.extractor.normalize_bolus_events(categorized_events['bolus_events'])
         
+        logger.info(
+            "Normalized counts: cgm=%d basal=%d bolus=%d",
+            len(cgm_data), len(basal_data), len(bolus_data)
+        )
+
         # # Step 3: Validate data
         # cgm_data, _ = self.validator.validate_events(cgm_data)
         # basal_data, _ = self.validator.validate_events(basal_data)

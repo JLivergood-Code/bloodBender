@@ -36,7 +36,7 @@ data:
 
   # Sequence parameters
   lookback: 288 # 24 hours @ 5-min intervals (24 * 60 / 5 = 288)
-  horizon: 12 # 60 minutes forecast @ 5-min intervals (60 / 5 = 12)
+  horizon: 24 # 120 minutes forecast @ 5-min intervals (120 / 5 = 24)
   stride: 1 # Slide window by 1 step (dense sampling)
 
   # Preprocessing
@@ -104,6 +104,7 @@ metrics:
 horizon_checkpoints:
   - 30 # 30 minutes (6 steps)
   - 60 # 60 minutes (12 steps)
+  - 120 # 120 minutes (24 steps)
 
 # Logging
 logging:

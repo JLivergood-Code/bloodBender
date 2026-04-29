@@ -2,9 +2,10 @@ from pathlib import Path
 import xml.etree.ElementTree as ET
 import numpy as np
 import pandas as pd
+import argparse
 
-DATASET_PATH = "/home/dev/Senior_Project/datasets/OhioT1DM/"
-OUTPUT_DIR = "/home/dev/Senior_Project/bloodBender/bloodBath/bloodBank/raw/"
+DATASET_PATH = "/home/desktop/Sneior_Project/datasets/ohiot1d/"
+OUTPUT_DIR = "/home/desktop/Sneior_Project/bloodBender/bloodBath/bloodBank/raw/"
 TZ = "America/Los_Angeles"
 
 def localize(series):
@@ -182,7 +183,7 @@ def parse_xml_to_df(xml_file):
 
     # label mask
     # for now: True where a row exists and can be used
-    df["mask_label"] = True
+    df["mask_label"] = ~df["mask_bg"]
 
     # optional patient id
     patient_id = root.get("id")
@@ -208,11 +209,11 @@ def parse_xml_to_df(xml_file):
     return df, patient_id
 
 
-def traverse_dataset(dataset_dir: str) -> list[dict]:
+def traverse_dataset(dataset_dir: Path, output_file: Path) -> list[dict]:
     """
     Recursively traverse the directory and parse every XML file.
     """
-    dataset_path = Path(dataset_dir)
+    dataset_path = dataset_dir
 
     if not dataset_path.exists():
         raise FileNotFoundError(f"Directory does not exist: {dataset_dir}")
@@ -221,7 +222,9 @@ def traverse_dataset(dataset_dir: str) -> list[dict]:
 
     for xml_file in dataset_path.rglob("*.xml"):
         df, patient_id = parse_xml_to_df(xml_file)
-        out_path = Path(OUTPUT_DIR) / f"ohio"/f"{patient_id}.csv"
+        file_type = Path(xml_file).parent.name
+        out_path = Path(output_file) / f"ohio"/f"{patient_id}_{file_type}.csv"
+        
         
         # Error checking to make the output directory exists before saving
         if not out_path.exists():
@@ -234,11 +237,34 @@ def traverse_dataset(dataset_dir: str) -> list[dict]:
 
     return results
 
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Parse XML dataset and output processed dataframe"
+    )
+
+    parser.add_argument(
+        "--dataset",
+        type=Path,
+        default=DATASET_PATH,
+        help="Path to input dataset directory (XML files)"
+    )
+
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=OUTPUT_DIR,
+        help="Path to output file (e.g., CSV)"
+    )
+
+    return parser.parse_args()
 
 if __name__ == "__main__":
-    dataset_directory = DATASET_PATH
 
-    all_data = traverse_dataset(dataset_directory)
+    args = parse_args()
+    dataset_directory = args.dataset
+    output_dir = args.output
+
+    all_data = traverse_dataset(dataset_directory, output_dir)
 
     for item in all_data:
         print(f"Rows: {item}")

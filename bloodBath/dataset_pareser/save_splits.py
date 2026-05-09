@@ -1,8 +1,8 @@
 import pandas as pd
-from ..core.config import DATA_PATHS
+from bloodBath.core.config import DATA_PATHS
 # from  ..utils.logging_utils import 
 
-def _save_chronological_splits(
+def save_chronological_splits(
                                    lstm_df: pd.DataFrame,
                                    pump_serial: str,
                                    start_date: str,

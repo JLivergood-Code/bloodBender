@@ -3,14 +3,20 @@ import numpy as np
 import pandas as pd
 import argparse
 import re
+from bloodBath.dataset_pareser.save_splits import save_chronological_splits
 
-DATASET_PATH = Path("/home/desktop/Sneior_Project/datasets/azt1d/")
-OUTPUT_DIR = Path("/home/desktop/Sneior_Project/bloodBender/bloodBath/bloodBank/raw/datasets")
+DATASET_PATH = Path("/home/dev/Senior_Project/datasets/azt1d/cgm")
+OUTPUT_DIR = Path("/home/dev/Senior_Project/bloodBender/bloodBath/bloodBank/raw/datasets/")
 TZ = "America/Los_Angeles"
 
 
-def localize(series: pd.Series) -> pd.Series:
-    return series.dt.tz_localize(
+def localize_timestamp_series(series: pd.Series) -> pd.Series:
+    ts = pd.to_datetime(series, errors="coerce")
+
+    if getattr(ts.dt, "tz", None) is not None:
+        return ts.dt.tz_convert(TZ)
+
+    return ts.dt.tz_localize(
         TZ,
         ambiguous="NaT",
         nonexistent="shift_forward"
@@ -18,13 +24,11 @@ def localize(series: pd.Series) -> pd.Series:
 
 
 def extract_subject_id(csv_file: Path) -> str:
-    # tries folder name first: "Subject 3" -> "3"
     folder_name = csv_file.parent.name
     match = re.search(r"Subject\s+(\d+)", folder_name, re.IGNORECASE)
     if match:
         return match.group(1)
 
-    # fallback to file stem: "Subject 3.csv" -> "3"
     match = re.search(r"Subject\s+(\d+)", csv_file.stem, re.IGNORECASE)
     if match:
         return match.group(1)
@@ -32,11 +36,102 @@ def extract_subject_id(csv_file: Path) -> str:
     return csv_file.stem
 
 
+def build_bg_grid(df: pd.DataFrame, timestamp_col: str, bg_col: str) -> pd.DataFrame:
+    raw = pd.DataFrame({
+        "timestamp_raw": localize_timestamp_series(df[timestamp_col]),
+        "bg_raw": pd.to_numeric(df[bg_col], errors="coerce")
+    }).dropna(subset=["timestamp_raw"]).copy()
+
+    raw["timestamp"] = raw["timestamp_raw"].dt.floor("5min")
+    raw["bg_observed"] = raw["bg_raw"].notna()
+
+    grouped = (
+        raw.groupby("timestamp", as_index=False)
+        .agg(
+            bg=("bg_raw", "mean"),
+            bg_observed=("bg_observed", "max")
+        )
+        .sort_values("timestamp")
+    )
+
+    full_grid = pd.DataFrame({
+        "timestamp": pd.date_range(
+            start=grouped["timestamp"].min(),
+            end=grouped["timestamp"].max(),
+            freq="5min",
+            tz=TZ
+        )
+    })
+
+    out = full_grid.merge(grouped, on="timestamp", how="left")
+    out["bg_observed"] = out["bg_observed"].fillna(False).astype(bool)
+
+    # mask_bg=True means there was no original BG sample in this bucket
+    out["mask_bg"] = ~out["bg_observed"]
+
+    # Fill only after mask creation
+    out["bg"] = out["bg"].interpolate(method="linear", limit_direction="both")
+
+    return out
+
+
+def build_basal_grid(df: pd.DataFrame, timestamp_col: str, basal_col: str, full_timestamps: pd.Series) -> pd.DataFrame:
+    if basal_col not in df.columns:
+        return pd.DataFrame({
+            "timestamp": full_timestamps,
+            "basal_rate": 0.0
+        })
+
+    raw = pd.DataFrame({
+        "timestamp_raw": localize_timestamp_series(df[timestamp_col]),
+        "basal_rate": pd.to_numeric(df[basal_col], errors="coerce")
+    }).dropna(subset=["timestamp_raw"]).copy()
+
+    raw["timestamp"] = raw["timestamp_raw"].dt.floor("5min")
+
+    grouped = (
+        raw.groupby("timestamp", as_index=False)
+        .agg(basal_rate=("basal_rate", "last"))
+        .sort_values("timestamp")
+    )
+
+    out = pd.DataFrame({"timestamp": full_timestamps}).merge(grouped, on="timestamp", how="left")
+
+    # Basal persists until changed
+    out["basal_rate"] = out["basal_rate"].ffill().fillna(0.0)
+
+    return out
+
+
+def build_bolus_grid(df: pd.DataFrame, timestamp_col: str, bolus_col: str, full_timestamps: pd.Series) -> pd.DataFrame:
+    if bolus_col not in df.columns:
+        return pd.DataFrame({
+            "timestamp": full_timestamps,
+            "bolus_dose": 0.0
+        })
+
+    raw = pd.DataFrame({
+        "timestamp_raw": localize_timestamp_series(df[timestamp_col]),
+        "bolus_dose": pd.to_numeric(df[bolus_col], errors="coerce").fillna(0.0)
+    }).dropna(subset=["timestamp_raw"]).copy()
+
+    raw["timestamp"] = raw["timestamp_raw"].dt.floor("5min")
+
+    grouped = (
+        raw.groupby("timestamp", as_index=False)
+        .agg(bolus_dose=("bolus_dose", "sum"))
+        .sort_values("timestamp")
+    )
+
+    out = pd.DataFrame({"timestamp": full_timestamps}).merge(grouped, on="timestamp", how="left")
+    out["bolus_dose"] = out["bolus_dose"].fillna(0.0)
+
+    return out
+
+
 def parse_csv_to_df(csv_file: Path):
     df = pd.read_csv(csv_file)
 
-    # --- normalize expected column names ---
-    # adjust these if your AZ1TD CSV uses slightly different names
     timestamp_col = "EventDateTime"
     bg_col = "CGM"
     basal_col = "Basal"
@@ -46,105 +141,14 @@ def parse_csv_to_df(csv_file: Path):
     if missing:
         raise ValueError(f"Missing required columns in {csv_file}: {missing}")
 
-    # ----------------------------
-    # 1) Timestamp + BG
-    # ----------------------------
-    out = pd.DataFrame()
+    out = build_bg_grid(df, timestamp_col, bg_col)
 
-    out["timestamp_raw"] = pd.to_datetime(df[timestamp_col], errors="coerce")
-    out = out.dropna(subset=["timestamp_raw"]).copy()
-    out["timestamp_raw"] = localize(out["timestamp_raw"])
+    basal_df = build_basal_grid(df, timestamp_col, basal_col, out["timestamp"])
+    out = out.merge(basal_df, on="timestamp", how="left")
 
-    out = out.dropna(subset=["timestamp_raw"]).copy()
-    out["timestamp"] = out["timestamp_raw"].dt.floor("5min")
+    bolus_df = build_bolus_grid(df, timestamp_col, bolus_col, out["timestamp"])
+    out = out.merge(bolus_df, on="timestamp", how="left")
 
-    out["bg_raw"] = pd.to_numeric(df.loc[out.index, bg_col], errors="coerce")
-
-    # average if multiple rows land in same 5-minute bucket
-    out = (
-        out.groupby("timestamp", as_index=False)
-        .agg(bg=("bg_raw", "mean"))
-    )
-
-    out["bg_observed"] = out["bg"].notna()
-
-    # ----------------------------
-    # 2) Full 5-minute grid
-    # ----------------------------
-    full_grid = pd.DataFrame({
-        "timestamp": pd.date_range(
-            start=out["timestamp"].min(),
-            end=out["timestamp"].max(),
-            freq="5min",
-            tz=TZ
-        )
-    })
-
-    out = full_grid.merge(out, on="timestamp", how="left")
-    out["bg_observed"] = out["bg_observed"].fillna(False)
-
-    # mask_bg = True when BG should be ignored
-    out["mask_bg"] = ~out["bg_observed"]
-
-    # fill BG by interpolation
-    out["bg"] = out["bg"].interpolate(method="linear", limit_direction="both")
-
-    # ----------------------------
-    # 3) Basal
-    # ----------------------------
-    if basal_col in df.columns:
-        basal_df = pd.DataFrame({
-            "timestamp_raw": pd.to_datetime(df[timestamp_col], errors="coerce"),
-            "basal_rate": pd.to_numeric(df[basal_col], errors="coerce")
-        })
-
-        basal_df = basal_df.dropna(subset=["timestamp_raw"]).copy()
-        basal_df["timestamp_raw"] = localize(basal_df["timestamp_raw"])
-        basal_df = basal_df.dropna(subset=["timestamp_raw"]).copy()
-        basal_df["timestamp"] = basal_df["timestamp_raw"].dt.floor("5min")
-
-        # keep latest non-null basal in each bucket, then carry forward
-        basal_df = (
-            basal_df.drop(columns=["timestamp_raw"])
-            .groupby("timestamp", as_index=False)
-            .agg(basal_rate=("basal_rate", "last"))
-            .sort_values("timestamp")
-        )
-
-        out = out.merge(basal_df, on="timestamp", how="left")
-        out["basal_rate"] = out["basal_rate"].ffill().fillna(0.0)
-    else:
-        out["basal_rate"] = 0.0
-
-    # ----------------------------
-    # 4) Bolus
-    # ----------------------------
-    out["bolus_dose"] = 0.0
-
-    if bolus_col in df.columns:
-        bolus_df = pd.DataFrame({
-            "timestamp_raw": pd.to_datetime(df[timestamp_col], errors="coerce"),
-            "bolus_dose": pd.to_numeric(df[bolus_col], errors="coerce").fillna(0.0)
-        })
-
-        bolus_df = bolus_df.dropna(subset=["timestamp_raw"]).copy()
-        bolus_df["timestamp_raw"] = localize(bolus_df["timestamp_raw"])
-        bolus_df = bolus_df.dropna(subset=["timestamp_raw"]).copy()
-        bolus_df["timestamp"] = bolus_df["timestamp_raw"].dt.floor("5min")
-
-        bolus_df = (
-            bolus_df.drop(columns=["timestamp_raw"])
-            .groupby("timestamp", as_index=False)
-            .agg(bolus_dose=("bolus_dose", "sum"))
-        )
-
-        out = out.merge(bolus_df, on="timestamp", how="left", suffixes=("", "_new"))
-        out["bolus_dose"] = out["bolus_dose_new"].fillna(out["bolus_dose"])
-        out = out.drop(columns=["bolus_dose_new"])
-
-    # ----------------------------
-    # 5) Derived features
-    # ----------------------------
     out["basal_delta"] = out["basal_rate"].diff().fillna(0.0)
 
     last_bolus_time = pd.NaT
@@ -170,8 +174,9 @@ def parse_csv_to_df(csv_file: Path):
     out["sin_time"] = np.sin(angle)
     out["cos_time"] = np.cos(angle)
 
-    # same convention as your Ohio code
-    out["mask_label"] = ~out["mask_bg"]
+    # Final masks
+    out["mask_bg"] = out["mask_bg"].astype(bool)
+    out["mask_label"] = (~out["mask_bg"]).astype(bool)
 
     subject_id = extract_subject_id(csv_file)
 
@@ -192,10 +197,6 @@ def parse_csv_to_df(csv_file: Path):
         ]
     ]
 
-    # force masks to bool
-    out["mask_bg"] = out["mask_bg"].astype(bool)
-    out["mask_label"] = out["mask_label"].astype(bool)
-
     return out, subject_id
 
 
@@ -207,15 +208,23 @@ def traverse_dataset(dataset_dir: Path, output_dir: Path) -> list[str]:
 
     results = []
 
-    # recursively find AZ1TD subject CSVs
     for csv_file in dataset_path.rglob("*.csv"):
         try:
             df, subject_id = parse_csv_to_df(csv_file)
 
+            # save the full parsed file
             out_path = output_dir / "az1td" / f"{subject_id}.csv"
             out_path.parent.mkdir(parents=True, exist_ok=True)
-
             df.to_csv(out_path, index=False)
+
+            # derive date range from parsed dataframe
+            ts = pd.to_datetime(df["timestamp"], errors="coerce")
+            start_date = ts.min().strftime("%Y-%m-%d")
+            end_date = ts.max().strftime("%Y-%m-%d")
+
+            # save train/validate/test splits
+            save_chronological_splits(df, subject_id, start_date, end_date)
+
             print(f"Parsed {csv_file} for subject {subject_id}, saved to {out_path}")
             results.append(subject_id)
 

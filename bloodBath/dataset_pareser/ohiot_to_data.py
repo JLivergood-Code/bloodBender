@@ -3,9 +3,10 @@ import xml.etree.ElementTree as ET
 import numpy as np
 import pandas as pd
 import argparse
+from bloodBath.dataset_pareser.save_splits import save_chronological_splits
 
-DATASET_PATH = "/home/desktop/Sneior_Project/datasets/ohiot1d/"
-OUTPUT_DIR = "/home/desktop/Sneior_Project/bloodBender/bloodBath/bloodBank/raw/"
+DATASET_PATH = "/home/dev/Senior_Project/datasets/ohiot1d/"
+OUTPUT_DIR = "/home/dev/Senior_Project/bloodBender/bloodBath/bloodBank/raw/datasets"
 TZ = "America/Los_Angeles"
 
 def localize(series):
@@ -226,12 +227,20 @@ def traverse_dataset(dataset_dir: Path, output_file: Path) -> list[dict]:
         out_path = Path(output_file) / f"ohio"/f"{patient_id}_{file_type}.csv"
         
         
-        # Error checking to make the output directory exists before saving
-        if not out_path.exists():
-            out_path.parent.mkdir(parents=True, exist_ok=True)
+        # derive date range from parsed dataframe
+        ts = pd.to_datetime(df["timestamp"], errors="coerce")
+        ts = ts.dropna()
 
-        
-        df.to_csv(out_path, index=False)
+        if ts.empty:
+            print(f"Skipping split save for {xml_file}: no valid timestamps")
+            continue
+
+        start_date = ts.min().strftime("%Y-%m-%d")
+        end_date = ts.max().strftime("%Y-%m-%d")
+
+        # save chronological train/validate/test splits
+        save_chronological_splits(df, patient_id, start_date, end_date)
+
         print(f"Parsed {xml_file} for patient {patient_id}, saved to {out_path}")
         results.append(patient_id)
 

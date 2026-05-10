@@ -69,7 +69,8 @@ def train(config_path: Path, file_name: str):
     logger.info("Creating dataloaders...")
     train_loader, val_loader, test_loader, scaler = create_dataloaders(
         data_dir=data_dir,
-        pump_ids=config['data']['pump_ids'],
+        pump_ids=config["data"].get("pump_ids", []),
+        dataset_dirs=config["data"].get("datasets", []),
         features=config['data']['features'],
         target=config['data']['target'],
         lookback=config['data']['lookback'],
@@ -202,6 +203,7 @@ def train(config_path: Path, file_name: str):
         # file_name_split = file_name.split(".")
         results_file = results_file.parent / f"{results_file.stem}-{timestamp}-{results_file.suffix}"
     with open(results_file, 'w') as f:
+        
         yaml.dump(test_results[0], f)
     logger.info(f"Saved test results to {results_file}")
     

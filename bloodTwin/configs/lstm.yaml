@@ -104,8 +104,6 @@ metrics:
 horizon_checkpoints:
   - 30 # 30 minutes (6 steps)
   - 60 # 60 minutes (12 steps)
-  - 120
-  - 240
 
 # Logging
 logging:

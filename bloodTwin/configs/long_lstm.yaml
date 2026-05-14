@@ -5,7 +5,7 @@
 model:
   name: "bloodTwin_unified_lstm"
   hidden_size: 128
-  num_layers: 2
+  num_layers: 3
   dropout: 0.2
   bidirectional: false
 
@@ -71,7 +71,7 @@ training:
     monitor: "val_mae"
     patience: 5
     mode: "min"
-    min_delta: 0.001
+    min_delta: 0.0005
 
   # Checkpointing
   checkpoint:

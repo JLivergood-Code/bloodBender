@@ -12,6 +12,7 @@ from torch.utils.data import Dataset, DataLoader
 from pathlib import Path
 from typing import List, Tuple, Optional, Dict
 from sklearn.preprocessing import RobustScaler
+import scipy.stats as stats
 import pickle
 import logging
 
@@ -355,3 +356,58 @@ def create_dataloaders(
     )
     
     return train_loader, val_loader, test_loader, scaler
+
+def extract_statistical_features(glucose_series: np.ndarray) -> np.ndarray:
+    """
+    Compute the 8 statistical features from Table 2 of the paper.
+    
+    Args:
+        glucose_series: full patient glucose history (n_readings,)
+                        computed over ALL readings, not per window
+    Returns:
+        features: (8,) array — 
+                  [min, max, mean, std, median, skewness, kurtosis, peak_to_peak]
+    """
+    return np.array([
+        glucose_series.min(),
+        glucose_series.max(),
+        glucose_series.mean(),
+        glucose_series.std(),
+        np.median(glucose_series),
+        stats.skew(glucose_series),
+        stats.kurtosis(glucose_series),
+        glucose_series.max() - glucose_series.min()   # peak to peak
+    ])
+
+
+def extract_stat_features_from_loader(
+    dataloader,
+    horizon: int
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Pulls all batches from a dataloader and builds flat arrays
+    suitable for XGBoost training.
+
+    Args:
+        dataloader: your existing PyTorch DataLoader
+        horizon:    number of steps ahead being predicted
+    Returns:
+        X: (n_samples, 8)  statistical features
+        y: (n_samples, horizon) targets
+    """
+    X_list, y_list = [], []
+
+    for sequences, targets in dataloader:
+        # sequences: (batch, lookback, n_features)
+        # We extract stat features from the glucose channel (assumed index 0)
+        glucose = sequences[:, :, 0].numpy()   # (batch, lookback)
+
+        batch_features = np.array([
+            extract_statistical_features(glucose[i])
+            for i in range(glucose.shape[0])
+        ])
+
+        X_list.append(batch_features)
+        y_list.append(targets.numpy())
+
+    return np.concatenate(X_list, axis=0), np.concatenate(y_list, axis=0)

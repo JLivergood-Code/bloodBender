@@ -397,10 +397,12 @@ def extract_stat_features_from_loader(
     """
     X_list, y_list = [], []
 
-    for sequences, targets in dataloader:
+    for batch in dataloader:                    # iterate over batches
+        sequences = batch['input']              # was: sequences, targets, _
+        targets   = batch['target']
+
         # sequences: (batch, lookback, n_features)
-        # We extract stat features from the glucose channel (assumed index 0)
-        glucose = sequences[:, :, 0].numpy()   # (batch, lookback)
+        glucose = sequences[:, :, 0].numpy()   # glucose channel
 
         batch_features = np.array([
             extract_statistical_features(glucose[i])
@@ -409,5 +411,7 @@ def extract_stat_features_from_loader(
 
         X_list.append(batch_features)
         y_list.append(targets.numpy())
+
+    return np.concatenate(X_list, axis=0), np.concatenate(y_list, axis=0)
 
     return np.concatenate(X_list, axis=0), np.concatenate(y_list, axis=0)

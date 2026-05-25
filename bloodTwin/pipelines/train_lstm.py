@@ -91,6 +91,42 @@ def train(config_path: Path, file_name: str):
     logger.info(f"Val batches: {len(val_loader)}")
     logger.info(f"Test batches: {len(test_loader)}")
     
+        ### XGBOOST STARTS HERE
+
+    batch = next(iter(train_loader))
+    print(type(batch))
+    print(len(batch))
+    for i, item in enumerate(batch):
+        print(f"item {i}: shape={item}, dtype={type(item)}")
+
+
+    logger.info("Extracting statistical features for XGBoost...")
+    X_train, y_train = extract_stat_features_from_loader(
+        train_loader, config['data']['horizon']
+    )
+    X_val, y_val = extract_stat_features_from_loader(
+        val_loader, config['data']['horizon']
+    )
+
+    xgb_params = config['model'].get('xgboost', {
+        'n_estimators': 400,
+        'max_depth': 10,
+        'learning_rate': 0.01,
+        'random_state': 42,
+        'eval_metric': 'rmse',
+        'early_stopping_rounds': 50
+    })
+
+    xgb_model = BloodTwinXGBoost(
+        horizon=config['data']['horizon'],
+        params=xgb_params
+    )
+    xgb_model.fit(X_train, y_train, X_val, y_val)
+    xgb_model.save(artifacts_dir / 'xgb_models')
+
+    ### XGBOOST ENDS HERE
+
+
     # Create model
     logger.info("Creating model...")
     model = BloodTwinLSTM(
@@ -192,33 +228,7 @@ def train(config_path: Path, file_name: str):
     logger.info("Starting training...")
     trainer.fit(model, train_loader, val_loader)
 
-    ### XGBOOST STARTS HERE
 
-    logger.info("Extracting statistical features for XGBoost...")
-    X_train, y_train = extract_stat_features_from_loader(
-        train_loader, config['data']['horizon']
-    )
-    X_val, y_val = extract_stat_features_from_loader(
-        val_loader, config['data']['horizon']
-    )
-
-    xgb_params = config['model'].get('xgboost', {
-        'n_estimators': 400,
-        'max_depth': 10,
-        'learning_rate': 0.01,
-        'random_state': 42,
-        'eval_metric': 'rmse',
-        'early_stopping_rounds': 50
-    })
-
-    xgb_model = BloodTwinXGBoost(
-        horizon=config['data']['horizon'],
-        params=xgb_params
-    )
-    xgb_model.fit(X_train, y_train, X_val, y_val)
-    xgb_model.save(artifacts_dir / 'xgb_models')
-
-    ### XGBOOST ENDS HERE
     
     # Test on best model
     logger.info("Testing best model...")

@@ -39,7 +39,7 @@ data:
 
   # Sequence parameters
   lookback: 288 # 24 hours @ 5-min intervals (24 * 60 / 5 = 288)
-  horizon: 36 # 60 minutes forecast @ 5-min intervals (60 / 5 = 12)
+  horizon: 12 # 60 minutes forecast @ 5-min intervals (60 / 5 = 12)
   stride: 1 # Slide window by 1 step (dense sampling)
 
   # Preprocessing

@@ -69,7 +69,9 @@ def evaluate_lstm(
     all_preds, all_actuals = [], []
 
     with torch.no_grad():
-        for sequences, targets in dataloader:
+        for batch in dataloader:
+            sequences = batch['input']
+            targets   = batch['target']
             preds = model(sequences).numpy()       # (batch, horizon)
             all_preds.append(preds)
             all_actuals.append(targets.numpy())

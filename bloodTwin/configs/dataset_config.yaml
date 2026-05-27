@@ -80,9 +80,9 @@ training:
   checkpoint:
     monitor: "val_mae"
     mode: "min"
-    save_top_k: 3
+    save_top_k: 1
     save_last: true
-    filename: "bloodtwin-{epoch:02d}-{val_mae:.3f}"
+    filename: "best_model-{val_mae:.3f}"
 
 # Data Loading
 dataloader:

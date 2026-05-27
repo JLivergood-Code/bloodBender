@@ -3,11 +3,13 @@ import xml.etree.ElementTree as ET
 import numpy as np
 import pandas as pd
 import argparse
+from bloodBath.core.config import BLOODBANK_ROOT
 from bloodBath.dataset_parser.save_splits import save_chronological_splits
 
 DATASET = "ohiot1d"
-DATASET_PATH = "/home/desktop/Sneior_Project/datasets/ohiot1d/"
-OUTPUT_DIR = "/home/desktop/Sneior_Project/bloodBender/bloodBath/bloodBank/raw/datasets"
+DATASET_PATH = BLOODBANK_ROOT.parent.parent.parent / "datasets" /  DATASET
+# OUTPUT_DIR = Path("/home/desktop/Sneior_Project/bloodBender/bloodBath/bloodBank/raw/datasets/")
+OUTPUT_DIR = BLOODBANK_ROOT / "raw" / "datasets" / DATASET 
 TZ = "America/Los_Angeles"
 
 def localize(series):
@@ -225,7 +227,7 @@ def traverse_dataset(dataset_dir: Path, output_file: Path) -> list[dict]:
     for xml_file in dataset_path.rglob("*.xml"):
         df, patient_id = parse_xml_to_df(xml_file)
         file_type = Path(xml_file).parent.name
-        out_path = Path(output_file) / f"ohio"/f"{patient_id}_{file_type}.csv"
+        out_path = Path(output_file) /f"{patient_id}_{file_type}.csv"
         
         
         # derive date range from parsed dataframe
@@ -273,6 +275,8 @@ if __name__ == "__main__":
     args = parse_args()
     dataset_directory = args.dataset
     output_dir = args.output
+
+    print(f"Parsing the OhioT1DM dataset from {dataset_directory} and saving to {output_dir}...")
 
     all_data = traverse_dataset(dataset_directory, output_dir)
 

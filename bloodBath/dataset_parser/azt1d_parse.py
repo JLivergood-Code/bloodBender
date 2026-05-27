@@ -4,10 +4,12 @@ import pandas as pd
 import argparse
 import re
 from bloodBath.dataset_parser.save_splits import save_chronological_splits
+from bloodBath.core.config import BLOODBANK_ROOT
 
 DATASET = "azt1d"
-DATASET_PATH = Path("/home/desktop/Sneior_Project/datasets/azt1d/cgm")
-OUTPUT_DIR = Path("/home/desktop/Sneior_Project/bloodBender/bloodBath/bloodBank/raw/datasets/")
+DATASET_PATH = BLOODBANK_ROOT.parent.parent.parent / "datasets" /  "azt1d"
+# OUTPUT_DIR = Path("/home/desktop/Sneior_Project/bloodBender/bloodBath/bloodBank/raw/datasets/")
+OUTPUT_DIR = BLOODBANK_ROOT / "raw" / "datasets" / DATASET 
 TZ = "America/Los_Angeles"
 
 
@@ -214,7 +216,7 @@ def traverse_dataset(dataset_dir: Path, output_dir: Path) -> list[str]:
             df, subject_id = parse_csv_to_df(csv_file)
 
             # save the full parsed file
-            out_path = output_dir / "az1td" / f"{subject_id}.csv"
+            out_path = output_dir / f"{subject_id}.csv"
             out_path.parent.mkdir(parents=True, exist_ok=True)
             df.to_csv(out_path, index=False)
 

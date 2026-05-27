@@ -18,7 +18,7 @@ from bloodTwin.models.fusion import FusionPredictor
 from bloodTwin.models.xgboost_model import BloodTwinXGBoost
 from bloodTwin.models.lstm import BloodTwinLSTM
 from bloodTwin.data.dataset import create_dataloaders, extract_stat_features_from_loader, extract_statistical_features
-from bloodTwin import ARTIFACTS_DIR, CONFIGS_DIR
+from bloodTwin import ARTIFACTS_DIR, CONFIGS_DIR, PROJECT_ROOT
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -116,8 +116,9 @@ def evaluate_fusion(
     """
     all_preds, all_actuals = [], []
 
-    for sequences, targets in dataloader:
-        # Stat features from glucose channel (index 0)
+    for batch in dataloader:                    # iterate over batches
+        sequences = batch['input']
+        targets   = batch['target']
         glucose = sequences[:, :, 0].numpy()
         stat_features = np.array([
             extract_statistical_features(glucose[i])
@@ -193,8 +194,10 @@ def evaluate(config_path: Path, split: str = 'val'):
         config = yaml.safe_load(f)
 
     artifacts_dir = ARTIFACTS_DIR / config['model']['name']
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
     horizon       = config['data']['horizon']
-    data_dir      = Path(config['data']['train_dir'])
+    data_dir = PROJECT_ROOT / config['data']['train_dir']
+
 
     # Load scaler
     with open(artifacts_dir / 'scaler.pkl', 'rb') as f:
@@ -202,15 +205,19 @@ def evaluate(config_path: Path, split: str = 'val'):
 
     # Create dataloaders — we only need the one matching `split`
     logger.info(f"Loading {split} data...")
-    train_loader, val_loader, test_loader, _ = create_dataloaders(
+    train_loader, val_loader, test_loader, scaler = create_dataloaders(
         data_dir=data_dir,
+        pump_ids=config["data"].get("pump_ids", []),
+        dataset_dirs=config["data"].get("datasets", []),
         features=config['data']['features'],
         target=config['data']['target'],
         lookback=config['data']['lookback'],
-        horizon=horizon,
+        horizon=config['data']['horizon'],
         stride=config['data']['stride'],
         batch_size=config['training']['batch_size'],
-        scaler_path=artifacts_dir / 'scaler.pkl'
+        num_workers=config['dataloader']['num_workers'],
+        pin_memory=config['dataloader']['pin_memory'],
+        persistent_workers=config['dataloader']['persistent_workers'],
     )
     loader = val_loader if split == 'val' else test_loader
 

@@ -93,12 +93,11 @@ def train(config_path: Path, file_name: str):
     
         ### XGBOOST STARTS HERE
 
-    batch = next(iter(train_loader))
-    print(type(batch))
-    print(len(batch))
-    for i, item in enumerate(batch):
-        print(f"item {i}: shape={item}, dtype={type(item)}")
-
+    # batch = next(iter(train_loader))
+    # print(type(batch))
+    # print(len(batch))
+    # for i, item in enumerate(batch):
+    #     print(f"item {i}: shape={item}, dtype={type(item)}")
 
     logger.info("Extracting statistical features for XGBoost...")
     X_train, y_train = extract_stat_features_from_loader(
